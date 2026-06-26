@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html><head><title>vocab test</title></head><body>
+<pre id="out">starting...</pre>
+<script>
+window.addEventListener('error', function(e){
+  document.getElementById('out').textContent += '\nERROR: ' + e.message + ' at ' + e.filename + ':' + e.lineno + ':' + e.colno;
+});
+</script>
+<script src="js/vocabulary.js"></script>
+<script>
+document.getElementById('out').textContent = 'after load: VOCAB_WORDS = ' + (typeof window.VOCAB_WORDS) + ', len = ' + (window.VOCAB_WORDS ? window.VOCAB_WORDS.length : 'n/a');
+</script>
+</body></html>

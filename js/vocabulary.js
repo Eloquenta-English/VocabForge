@@ -131,7 +131,7 @@
   // ═══ A1: TRAVEL ═══
   add('a1_061','car','A1','noun','a vehicle with four wheels','My father drives a red car.','/kɑːr/','travel');
   add('a1_062','bus','A1','noun','a large vehicle for passengers','I take the bus to school.','/bʌs/','travel');
-  add('a1_063','train','A1','noun','a vehicle that runs on rails','The train arrives at 3 o'clock.','/treɪn/','travel');
+  add('a1_063','train','A1','noun','a vehicle that runs on rails','The train arrives at 3 o\'clock.','/treɪn/','travel');
   add('a1_064','plane','A1','noun','a vehicle that flies','We traveled by plane to Spain.','/pleɪn/','travel');
   add('a1_065','bike','A1','noun','a two-wheeled vehicle','I ride my bike to work.','/baɪk/','travel');
   add('a1_066','street','A1','noun','a road in a town or city','Our school is on this street.','/striːt/','travel');

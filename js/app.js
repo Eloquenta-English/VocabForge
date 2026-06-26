@@ -22,7 +22,10 @@ var VF = {
     tts: true,
     theme: 'eloquent',
     font: 'nunito',
-    dailyGoal: 100
+    dailyGoal: 100,
+    glowStrength: 12,    /* px, 0-40 */
+    outlineWidth: 2,     /* px, 0-4 */
+    themeIntensity: 1.0  /* 0-1, multiplies accent overlays on background */
   },
 
   /* Theme definitions: key -> label, color */
@@ -529,6 +532,89 @@ var VF = {
     }
   },
 
+  renderDictionary: function() {
+    var container = document.getElementById('dictionaryContent');
+    if (!container) return;
+    if (container.getAttribute('data-initialized') === 'true') return;
+    container.setAttribute('data-initialized', 'true');
+
+    var total = (window.VOCAB_UNIFIED || []).length;
+    container.innerHTML =
+      '<h2 class="screen-title">Dictionary</h2>' +
+      '<p style="font-size:0.85rem;color:var(--text-muted);margin:-8px 0 12px;">' + total.toLocaleString() + ' words · search by word, definition, or topic</p>' +
+      '<div class="dict-controls">' +
+        '<input type="text" id="dictInput" class="dict-input" placeholder="Search 15,000+ words..." autocomplete="off">' +
+        '<select id="dictLevel" class="dict-select">' +
+          '<option value="">All levels</option>' +
+          '<option value="A1">A1</option>' +
+          '<option value="A2">A2</option>' +
+          '<option value="B1">B1</option>' +
+          '<option value="B2">B2</option>' +
+        '</select>' +
+        '<button class="btn btn-secondary btn-sm" id="dictClear">Clear</button>' +
+      '</div>' +
+      '<div id="dictResults" class="dict-results"></div>';
+
+    var input = document.getElementById('dictInput');
+    var level = document.getElementById('dictLevel');
+    var results = document.getElementById('dictResults');
+    var clearBtn = document.getElementById('dictClear');
+    var self = this;
+
+    function doSearch() {
+      var q = input.value.trim();
+      var lvl = level.value;
+      var opts = { limit: 50 };
+      if (lvl) opts.levels = [lvl];
+      var list = window.VF_SEARCH ? window.VF_SEARCH.search(q, opts) : [];
+
+      if (!q && !lvl) {
+        results.innerHTML = '<p class="dict-hint">Type a word or choose a level to start searching across ' + total.toLocaleString() + ' entries.</p>';
+        return;
+      }
+
+      if (list.length === 0) {
+        results.innerHTML = '<p class="dict-hint">No matches found.</p>';
+        return;
+      }
+
+      var html = '<div class="dict-list">';
+      for (var i = 0; i < list.length; i++) {
+        var w = list[i];
+        var def = w.definition || 'No definition available.';
+        var ex = w.example ? '<div class="dict-ex">“' + w.example + '”</div>' : '';
+        var phon = w.phonetic ? '<span class="dict-phon">' + w.phonetic + '</span>' : '';
+        html +=
+          '<div class="dict-card">' +
+            '<div class="dict-head">' +
+              '<span class="dict-word">' + self._escapeHtml(w.display || w.word) + '</span>' +
+              phon +
+              '<span class="dict-level level-' + (w.level || 'A1').toLowerCase() + '">' + (w.level || 'A1') + '</span>' +
+              '<span class="dict-pos">' + self._escapeHtml(w.pos || '—') + '</span>' +
+            '</div>' +
+            '<div class="dict-def">' + self._escapeHtml(def) + '</div>' +
+            ex +
+          '</div>';
+      }
+      html += '</div>';
+      results.innerHTML = html;
+    }
+
+    input.addEventListener('input', doSearch);
+    level.addEventListener('change', doSearch);
+    clearBtn.addEventListener('click', function() {
+      input.value = '';
+      level.value = '';
+      doSearch();
+    });
+
+    doSearch();
+  },
+
+  _escapeHtml: function(str) {
+    return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  },
+
   _comingSoon: function(screenName) {
     var el = document.querySelector('.screen[data-screen="' + screenName + '"] .coming-soon p');
     if (el) el.textContent = 'Coming Soon';
@@ -652,6 +738,79 @@ var VF = {
     if (btn) {
       btn.textContent = this.themes[this._themeIndex].label;
     }
+    this.applyGlow();
+    this.save();
+  },
+
+  /* Apply glow/outline/intensity from settings to CSS variables */
+  applyGlow: function() {
+    var r = document.documentElement.style;
+    var s = this.settings;
+    r.setProperty('--glow-strength', s.glowStrength + 'px');
+    r.setProperty('--outline-width', s.outlineWidth + 'px');
+    r.setProperty('--theme-intensity', String(s.themeIntensity));
+    /* Resolve accent to RGB for rgba() recompute */
+    var accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#22d3ee';
+    var hex = accent.replace('#','');
+    if (hex.length === 3) hex = hex.split('').map(function(c){return c+c;}).join('');
+    var r1 = parseInt(hex.slice(0,2),16), g1 = parseInt(hex.slice(2,4),16), b1 = parseInt(hex.slice(4,6),16);
+    var radialOp = (0.18 * s.themeIntensity).toFixed(3);
+    r.setProperty('--bg-radial', 'radial-gradient(ellipse 80% 60% at 50% 0%, rgba(' + r1 + ',' + g1 + ',' + b1 + ',' + radialOp + '), transparent 70%)');
+    var glowOp = (0.5 * s.themeIntensity).toFixed(3);
+    var outlineOp = (0.6 * s.themeIntensity).toFixed(3);
+    r.setProperty('--accent-glow', 'rgba(' + r1 + ',' + g1 + ',' + b1 + ',' + glowOp + ')');
+    r.setProperty('--accent-glow-soft', 'rgba(' + r1 + ',' + g1 + ',' + b1 + ',' + (glowOp*0.3).toFixed(3) + ')');
+    r.setProperty('--accent-outline', 'rgba(' + r1 + ',' + g1 + ',' + b1 + ',' + outlineOp + ')');
+  },
+
+  /* Slider handlers called from HTML oninput */
+  setGlowStrength: function(v) { this.settings.glowStrength = +v; var lbl = document.getElementById('lblGlow'); if (lbl) lbl.textContent = v + 'px'; this.applyGlow(); },
+  setOutlineWidth: function(v) { this.settings.outlineWidth = +v; var lbl = document.getElementById('lblOutline'); if (lbl) lbl.textContent = v + 'px'; this.applyGlow(); },
+  setThemeIntensity: function(v) { this.settings.themeIntensity = +v; var lbl = document.getElementById('lblIntensity'); if (lbl) lbl.textContent = Math.round(+v * 100) + '%'; this.applyGlow(); },
+
+  /* ---------- Pack Picker ---------- */
+  togglePackPicker: function() {
+    var p = document.getElementById('packPicker');
+    if (!p) return;
+    var visible = p.style.display !== 'none';
+    p.style.display = visible ? 'none' : 'block';
+    if (!visible) this.renderPackGrid();
+  },
+  renderPackGrid: function() {
+    var grid = document.getElementById('packGrid');
+    if (!grid || !window.VFPacks) return;
+    var meta = window.VFPacks.PACKS_META;
+    var stats = window.VFPacks.getStats();
+    var enabled = window.VFPacks.getEnabledPacks();
+    var html = '';
+    Object.keys(meta).forEach(function(key){
+      var m = meta[key];
+      var on = enabled.indexOf(key) !== -1;
+      var count = key === 'base' ? stats.base : (stats.packs[key] || 0);
+      html += '<label style="display:flex;align-items:center;gap:8px;padding:8px;border-radius:8px;background:var(--surface2);cursor:pointer;">' +
+              '<input type="checkbox" ' + (on?'checked':'') + ' onchange="VF.togglePack(\'' + key + '\', this.checked)">' +
+              '<span style="font-size:1.1rem;">' + m.icon + '</span>' +
+              '<span style="flex:1;font-size:0.82rem;font-weight:600;">' + m.name + '</span>' +
+              '<span style="font-size:0.75rem;color:var(--text-muted);">' + count + '</span>' +
+              '</label>';
+    });
+    grid.innerHTML = html;
+    var s = document.getElementById('packStats');
+    if (s) {
+      var active = window.VFPacks.getActiveWords().length;
+      s.textContent = active + ' active words across ' + enabled.length + ' packs';
+    }
+  },
+  togglePack: function(key, on) {
+    if (!window.VFPacks) return;
+    var arr = window.VFPacks.getEnabledPacks().slice();
+    var i = arr.indexOf(key);
+    if (on && i === -1) arr.push(key);
+    if (!on && i !== -1) arr.splice(i, 1);
+    window.VFPacks.setEnabledPacks(arr);
+    this.renderPackGrid();
+    /* Re-render home stats if visible */
+    if (typeof this.renderStats === 'function') this.renderStats();
   },
 
   /* ---------- Theme Picker ---------- */

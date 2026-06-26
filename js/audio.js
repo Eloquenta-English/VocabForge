@@ -264,7 +264,8 @@
     playWrong: playWrong,
     playLevelUp: playLevelUp,
     playHeartLoss: playHeartLoss,
-    playConfetti: playConfetti
+    playConfetti: playConfetti,
+    setTtsModel: setTtsModel
   };
 
   if (typeof window !== "undefined") {

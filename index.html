@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self'; media-src 'self' blob:; object-src 'none'; frame-ancestors 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VocabForge</title>
 <link rel="stylesheet" href="css/style.css">
@@ -83,6 +84,40 @@ body { margin: 0; background: #0a0a0f; color: #f1f5f9; font-family: system-ui, s
             <p style="color:rgba(255,255,255,0.8);font-size:0.9rem;">Master vocabulary one word at a time.</p>
           </div>
         </div>
+
+        <!-- Word of the Day + Theme controls -->
+        <div class="wod-card glow-on-hover" id="wodCard" style="display:flex;align-items:center;gap:14px;padding:14px;border-radius:12px;background:var(--surface);border:1px solid var(--border,var(--surface2));margin:12px 0;">
+          <div style="flex:0 0 auto;width:48px;height:48px;border-radius:50%;background:var(--accent);color:var(--bg);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.2rem;box-shadow:0 0 var(--glow-strength) var(--accent-glow);">W</div>
+          <div style="flex:1 1 auto;min-width:0;">
+            <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--accent);font-weight:700;">Word of the Day</div>
+            <div id="wodWord" style="font-size:1.15rem;font-weight:700;color:var(--text);margin-top:2px;">Loading…</div>
+            <div id="wodDef" style="font-size:0.85rem;color:var(--text-muted);margin-top:2px;line-height:1.5;"></div>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="VF.showScreen('flashcards')" title="Practice">Practice</button>
+        </div>
+
+        <!-- Story of the Week (cross-promote VBookReader) -->
+        <a href="../VBookReader/index.html" target="_blank" rel="noopener" class="sotw-card glow-on-hover" style="display:flex;align-items:center;gap:14px;padding:14px;border-radius:12px;background:linear-gradient(135deg,#2a2138 0%,#1a1525 100%);border:1px solid #3d3250;margin:8px 0;text-decoration:none;color:inherit;transition:transform 0.2s,box-shadow 0.2s;">
+          <div style="flex:0 0 auto;width:48px;height:48px;border-radius:12px;background:#f77f23;color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.5rem;">📖</div>
+          <div style="flex:1 1 auto;min-width:0;">
+            <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.08em;color:#ffbe78;font-weight:700;">Story of the Week · VBookReader</div>
+            <div id="sotwTitle" style="font-size:1.05rem;font-weight:700;color:#fff8f0;margin-top:2px;">Loading story…</div>
+            <div id="sotwDesc" style="font-size:0.82rem;color:#a89bb8;margin-top:2px;line-height:1.5;"></div>
+          </div>
+          <span style="color:#ffbe78;font-size:1.2rem;">›</span>
+        </a>
+
+        <!-- Theme + Settings quick bar -->
+        <div style="display:flex;gap:8px;margin:8px 0;">
+          <button class="btn btn-secondary btn-sm" onclick="VF.cycleTheme()" title="Cycle theme" style="flex:1;">
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--accent);margin-right:6px;box-shadow:0 0 8px var(--accent-glow);"></span>
+            <span id="btnCycleTheme">Eloquent</span>
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="VF.openModal('modalSettings')" title="Settings" style="flex:0 0 auto;padding:0 12px;">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          </button>
+        </div>
+
         <div class="home-actions">
           <button class="btn btn-primary" onclick="VF.showScreen('flashcards')">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
@@ -192,6 +227,11 @@ body { margin: 0; background: #0a0a0f; color: #f1f5f9; font-family: system-ui, s
       </div>
     </div>
 
+    <!-- DICTIONARY SCREEN -->
+    <div class="screen" data-screen="dictionary" data-active="false">
+      <div class="screen-content" id="dictionaryContent"></div>
+    </div>
+
     <!-- SETTINGS SCREEN -->
     <div class="screen" data-screen="settings" data-active="false">
       <div class="screen-content" id="settingsContent"></div>
@@ -230,6 +270,10 @@ body { margin: 0; background: #0a0a0f; color: #f1f5f9; font-family: system-ui, s
     <button class="nav-tab" data-nav="grammar">
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg>
       <span>Grammar</span>
+    </button>
+    <button class="nav-tab" data-nav="dictionary">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><line x1="8" y1="7" x2="16" y2="7"/><line x1="8" y1="11" x2="12" y2="11"/></svg>
+      <span>Dictionary</span>
     </button>
     <button class="nav-tab" data-nav="stats">
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
@@ -280,6 +324,43 @@ body { margin: 0; background: #0a0a0f; color: #f1f5f9; font-family: system-ui, s
         <div class="setting-row">
           <span>Theme</span>
           <button class="btn btn-secondary btn-sm" id="btnCycleTheme">Eloquent</button>
+        </div>
+        <div class="setting-row" style="border-top:2px solid var(--surface2);margin-top:8px;padding-top:16px;">
+          <span>Glow Strength</span>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <input type="range" min="0" max="40" step="1" value="12" oninput="VF.setGlowStrength(this.value)" style="width:120px;">
+            <span id="lblGlow" style="min-width:42px;font-size:0.85rem;color:var(--text-muted);">12px</span>
+          </div>
+        </div>
+        <div class="setting-row">
+          <span>Outline Width</span>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <input type="range" min="0" max="4" step="1" value="2" oninput="VF.setOutlineWidth(this.value)" style="width:120px;">
+            <span id="lblOutline" style="min-width:42px;font-size:0.85rem;color:var(--text-muted);">2px</span>
+          </div>
+        </div>
+        <div class="setting-row">
+          <span>Theme Intensity</span>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <input type="range" min="0" max="100" step="5" value="100" oninput="VF.setThemeIntensity(this.value/100)" style="width:120px;">
+            <span id="lblIntensity" style="min-width:42px;font-size:0.85rem;color:var(--text-muted);">100%</span>
+          </div>
+        </div>
+        <div class="setting-row" style="border-top:2px solid var(--surface2);margin-top:8px;padding-top:16px;">
+          <span>Vocabulary Packs</span>
+          <button class="btn btn-secondary btn-sm" onclick="VF.togglePackPicker()">Choose</button>
+        </div>
+        <div id="packPicker" style="display:none;padding:0 16px 12px;">
+          <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:10px;">Toggle which packs are active. Total active words appear in stats.</p>
+          <div id="packGrid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"></div>
+          <div id="packStats" style="margin-top:10px;font-size:0.85rem;color:var(--accent);"></div>
+        </div>
+        <div class="setting-row" style="border-top:2px solid var(--surface2);margin-top:8px;padding-top:16px;">
+          <span>Story Tools</span>
+          <div style="display:flex;gap:6px;">
+            <a class="btn btn-secondary btn-sm" href="../VBookReader/index.html" target="_blank" rel="noopener">Reader</a>
+            <a class="btn btn-secondary btn-sm" href="../VBookMaker/index.html" target="_blank" rel="noopener">Maker</a>
+          </div>
         </div>
         <div class="setting-row" style="border-top:2px solid var(--surface2);margin-top:8px;padding-top:16px;">
           <span>Data</span>
@@ -354,6 +435,16 @@ body { margin: 0; background: #0a0a0f; color: #f1f5f9; font-family: system-ui, s
 </div><!-- /#app -->
 
 <script src="js/vocabulary.js"></script>
+<script src="js/data/wordnet-core.js"></script>
+<script src="js/packs/legal.js"></script>
+<script src="js/packs/it.js"></script>
+<script src="js/packs/hr.js"></script>
+<script src="js/packs/marketing.js"></script>
+<script src="js/packs/halloween.js"></script>
+<script src="js/packs/christmas.js"></script>
+<script src="js/packs/medical.js"></script>
+<script src="js/packs-loader.js"></script>
+<script src="js/data/vocab-unified.js"></script>
 <script src="js/progress.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/games/flashcards.js"></script>
@@ -363,6 +454,7 @@ body { margin: 0; background: #0a0a0f; color: #f1f5f9; font-family: system-ui, s
 <script src="js/games/wordsearch.js"></script>
 <script src="js/grammar.js"></script>
 <script src="js/games/grammar-drill.js"></script>
+<script src="js/wod.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>
