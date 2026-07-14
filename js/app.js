@@ -14,7 +14,9 @@ var VF = {
     streak: 0,
     bestStreak: 0,
     wordsLearned: [],
-    achievements: []
+    achievements: [],
+    sessions: [],
+    _sessionStart: 0
   },
 
   settings: {
@@ -242,6 +244,12 @@ var VF = {
     var elCorrect = document.getElementById('goCorrect');
     if (elScore) elScore.textContent = this.user.streak;
     if (elCorrect) elCorrect.textContent = this.user.bestStreak;
+    // Log the session for analytics
+    if (this.user._sessionStart) {
+      var dur = Math.round((Date.now() - this.user._sessionStart) / 1000);
+      this.recordSession('vocab', this._lastSessionScore || 0, dur, this._lastSessionWords || []);
+      this.user._sessionStart = 0;
+    }
     this.openModal('modalGameOver');
   },
 
@@ -255,6 +263,13 @@ var VF = {
 
     var xpEl = document.getElementById('levelUpXP');
     if (xpEl) xpEl.textContent = '+' + this._sessionXP + ' XP this session';
+
+    // Mark a level-up milestone in the session log
+    if (this.user._sessionStart && this.user.sessions.length) {
+      var last = this.user.sessions[this.user.sessions.length - 1];
+      last.levelUp = newLevel;
+      this.save();
+    }
 
     // Open modal
     this.openModal('modalLevelUp');
@@ -405,10 +420,82 @@ var VF = {
 
     this.screen = name;
 
+    // Default topic hint per screen (renderers can override via setTopicBg)
+    if (typeof this.setTopicBg === 'function') {
+      var screenTopics = {
+        home: 'people',         // generic social
+        learn: 'education',
+        'games-menu': 'play',
+        grammar: 'work',
+        dictionary: 'travel',   // exploration
+        analytics: 'time',      // reflection
+        stats: 'time',
+        flashcards: 'education',
+        'game-quiz': 'education',
+        'game-typing': 'work',
+        'game-memory': 'home',
+        'game-wordsearch': 'nature',
+        settings: 'home'
+      };
+      // Map: if a known topic exists in VFImages, use it; otherwise leave current
+      var hint = screenTopics[name];
+      if (hint && typeof VFImages !== 'undefined' && VFImages[hint]) {
+        this.setTopicBg(hint);
+      }
+    }
+
     // Call screen-specific renderer
     var renderer = this['render' + name.replace(/(^|-)([a-z])/g, function(m, d, c) { return c.toUpperCase(); })];
     if (typeof renderer === 'function') {
       renderer.call(this);
+    }
+  },
+
+  /* ---------- Topic-Aware Background System ---------- */
+  _currentTopic: null,
+  _topicImgCache: {}, // topic -> loaded?
+
+  _normalizeTopic: function(topic) {
+    if (!topic) return null;
+    var t = String(topic).toLowerCase().split('-')[0]; // strip pack prefix like 'it-' or 'med-'
+    return t;
+  },
+
+  /**
+   * Resolve a topic to an image URL (uses VFImages first slot for that topic).
+   * Returns null if no match.
+   */
+  resolveTopicImage: function(topic) {
+    if (typeof VFImages === 'undefined') return null;
+    var key = this._normalizeTopic(topic);
+    if (!key) return null;
+    var imgs = VFImages[key];
+    return (imgs && imgs[0]) ? imgs[0] : null;
+  },
+
+  /**
+   * Set the main body bg to a topic image. Crossfades via opacity.
+   * Call with null/empty topic to clear.
+   */
+  setTopicBg: function(topic) {
+    var key = this._normalizeTopic(topic);
+    if (key === this._currentTopic) return; // no-op
+    this._currentTopic = key;
+    var url = this.resolveTopicImage(key);
+    var root = document.documentElement;
+    if (!url) {
+      root.style.setProperty('--topic-bg', 'none');
+      root.style.setProperty('--topic-bg-opacity', '0');
+      return;
+    }
+    root.style.setProperty('--topic-bg', "url('" + url + "')");
+    root.style.setProperty('--topic-bg-opacity', '0.36');
+    // Preload so crossfade looks clean next time
+    if (!this._topicImgCache[url]) {
+      var img = new Image();
+      img.onload = function() { /* no-op, just warms cache */ };
+      img.src = url;
+      this._topicImgCache[url] = true;
     }
   },
 
@@ -419,7 +506,12 @@ var VF = {
     if(hero && typeof VFImages !== 'undefined'){
       var topics = Object.keys(VFImages);
       var randomTopic = topics[Math.floor(Math.random() * topics.length)];
-      hero.style.backgroundImage = "url('" + VFImages[randomTopic] + "')";
+      var heroImg = (VFImages[randomTopic] && VFImages[randomTopic][0]) || '';
+      if (heroImg) hero.style.backgroundImage = "url('" + heroImg + "')";
+      // Also set page bg to the same topic
+      this.setTopicBg(randomTopic);
+    } else {
+      this.setTopicBg(null);
     }
     // Update daily goal
     var goalFill = document.getElementById('dailyGoalFill');
@@ -437,8 +529,22 @@ var VF = {
     if (container.getAttribute('data-initialized') === 'true') return;
     container.setAttribute('data-initialized', 'true');
     container.innerHTML = '';
+    var self = this;
     if (typeof window.FlashcardGame !== 'undefined') {
       window.FlashcardGame.init(container);
+      // Hook into FlashcardGame's word change to update topic bg
+      var lastWord = null;
+      var pollInterval = setInterval(function() {
+        var w = window.FlashcardGame && window.FlashcardGame.currentWord;
+        if (w && w !== lastWord) {
+          lastWord = w;
+          if (w.topic) self.setTopicBg(w.topic);
+        }
+        // Stop polling if the game is unmounted
+        if (!document.querySelector('.screen[data-screen="flashcards"][data-active="true"]')) {
+          clearInterval(pollInterval);
+        }
+      }, 600);
     } else {
       container.innerHTML = '<div class="coming-soon"><p>Flashcards failed to load.</p></div>';
     }
@@ -968,6 +1074,9 @@ var VF = {
             this.user[key] = parsed[key];
           }
         }
+        // Backfill new fields for legacy saves
+        if (!Array.isArray(this.user.sessions)) this.user.sessions = [];
+        if (typeof this.user._sessionStart !== 'number') this.user._sessionStart = 0;
       }
 
       if (savedSettings) {
@@ -981,6 +1090,488 @@ var VF = {
     } catch (e) {
       console.warn('VocabForge: localStorage load failed', e);
     }
+  },
+
+  /* ============================================================
+     Session Logging + Analytics
+     ============================================================ */
+  recordSession: function(type, score, durationSec, words) {
+    if (!Array.isArray(this.user.sessions)) this.user.sessions = [];
+    this.user.sessions.push({
+      t: Date.now(),
+      type: type || 'vocab',
+      score: typeof score === 'number' ? score : 0,
+      dur: Math.max(0, Math.round(durationSec || 0)),
+      words: Array.isArray(words) ? words.slice(0, 10) : []
+    });
+    // Cap history to last 500 sessions
+    if (this.user.sessions.length > 500) {
+      this.user.sessions = this.user.sessions.slice(-500);
+    }
+    this.save();
+  },
+
+  seedSampleSessions: function(days) {
+    days = days || 14;
+    if (!Array.isArray(this.user.sessions)) this.user.sessions = [];
+    var types = ['vocab', 'quiz', 'typing', 'reading', 'speaking', 'grammar', 'dictionary'];
+    var now = Date.now();
+    var dayMs = 86400000;
+    var added = 0;
+    for (var d = days; d >= 0; d--) {
+      // Skip a couple of days for realism
+      if (d === 3 || d === 7) continue;
+      var sessionsToday = 1 + Math.floor(Math.random() * 4);
+      for (var s = 0; s < sessionsToday; s++) {
+        var hour = 8 + Math.floor(Math.random() * 12);
+        var minute = Math.floor(Math.random() * 60);
+        var ts = now - d * dayMs + (hour * 3600 + minute * 60) * 1000;
+        var type = types[Math.floor(Math.random() * types.length)];
+        var score = 40 + Math.floor(Math.random() * 60);
+        var dur = 60 + Math.floor(Math.random() * 600);
+        this.user.sessions.push({ t: ts, type: type, score: score, dur: dur, words: [] });
+        added++;
+      }
+    }
+    // Sort by time
+    this.user.sessions.sort(function(a, b) { return a.t - b.t; });
+    this.save();
+    return added;
+  },
+
+  exportSessionsCSV: function() {
+    var rows = [['Date', 'Type', 'Score', 'Duration (s)', 'Words']];
+    (this.user.sessions || []).forEach(function(s) {
+      var d = new Date(s.t);
+      var dateStr = d.getFullYear() + '-' +
+        String(d.getMonth() + 1).padStart(2, '0') + '-' +
+        String(d.getDate()).padStart(2, '0') + ' ' +
+        String(d.getHours()).padStart(2, '0') + ':' +
+        String(d.getMinutes()).padStart(2, '0');
+      rows.push([
+        dateStr,
+        s.type || 'vocab',
+        typeof s.score === 'number' ? s.score : '',
+        s.dur || 0,
+        (s.words || []).join('; ')
+      ]);
+    });
+    var csv = rows.map(function(r) {
+      return r.map(function(cell) {
+        var s = String(cell == null ? '' : cell);
+        if (s.indexOf(',') >= 0 || s.indexOf('"') >= 0 || s.indexOf('\n') >= 0) {
+          return '"' + s.replace(/"/g, '""') + '"';
+        }
+        return s;
+      }).join(',');
+    }).join('\n');
+
+    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'vocabforge-sessions-' + new Date().toISOString().slice(0, 10) + '.csv';
+    a.click();
+    setTimeout(function() { URL.revokeObjectURL(a.href); }, 1000);
+  },
+
+  /* ---------- Helpers used by renderAnalytics ---------- */
+  _dayKey: function(ts) {
+    var d = new Date(ts);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  },
+  _fmtDay: function(ts) {
+    var d = new Date(ts);
+    var days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    return days[d.getDay()];
+  },
+  _fmtDate: function(ts) {
+    var d = new Date(ts);
+    var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return months[d.getMonth()] + ' ' + d.getDate();
+  },
+
+  renderAnalytics: function() {
+    var container = document.querySelector('.screen[data-screen="analytics"] .screen-content');
+    if (!container) return;
+    var self = this;
+    var sessions = this.user.sessions || [];
+    var accent = this._getCssVar('--accent') || '#22d3ee';
+    var surface = this._getCssVar('--surface') || '#1a1a24';
+    var surface2 = this._getCssVar('--surface2') || '#22222e';
+    var border = this._getCssVar('--border') || '#2a2a36';
+    var text = this._getCssVar('--text') || '#f1f5f9';
+    var muted = this._getCssVar('--text-muted') || '#94a3b8';
+    var success = this._getCssVar('--success') || '#34d399';
+
+    // ---------- Compute stats ----------
+    var now = Date.now();
+    var dayMs = 86400000;
+    var monthAgo = now - 30 * dayMs;
+    var prevMonthAgo = now - 60 * dayMs;
+
+    var totalSessions = sessions.length;
+    var totalScore = 0, scoreCount = 0, totalDur = 0;
+    var thisMonth = 0, prevMonth = 0, thisMonthScore = 0, prevMonthScore = 0, thisMonthScoreCount = 0, prevMonthScoreCount = 0;
+
+    sessions.forEach(function(s) {
+      if (typeof s.score === 'number') { totalScore += s.score; scoreCount++; }
+      totalDur += s.dur || 0;
+      if (s.t >= monthAgo) {
+        thisMonth++;
+        if (typeof s.score === 'number') { thisMonthScore += s.score; thisMonthScoreCount++; }
+      } else if (s.t >= prevMonthAgo) {
+        prevMonth++;
+        if (typeof s.score === 'number') { prevMonthScore += s.score; prevMonthScoreCount++; }
+      }
+    });
+
+    var avgScore = scoreCount ? Math.round(totalScore / scoreCount) : 0;
+    var thisMonthAvg = thisMonthScoreCount ? Math.round(thisMonthScore / thisMonthScoreCount) : 0;
+    var prevMonthAvg = prevMonthScoreCount ? Math.round(prevMonthScore / prevMonthScoreCount) : 0;
+    var wordsLearned = this.user.wordsLearned.length || 0;
+
+    var sessionsTrend = this._trendPct(thisMonth, prevMonth);
+    var scoreTrend = this._trendPct(thisMonthAvg, prevMonthAvg);
+    var avgSessionLen = totalSessions ? Math.round(totalDur / totalSessions) : 0;
+
+    // Last 7 days (Mon..Sun style: 7 buckets ending today)
+    var dayBuckets = [];
+    for (var i = 6; i >= 0; i--) {
+      var start = now - i * dayMs;
+      var key = this._dayKey(start);
+      dayBuckets.push({ key: key, label: this._fmtDay(start), count: 0, date: start });
+    }
+    var maxBucket = 1;
+    sessions.forEach(function(s) {
+      var k = self._dayKey(s.t);
+      for (var b = 0; b < dayBuckets.length; b++) {
+        if (dayBuckets[b].key === k) {
+          dayBuckets[b].count++;
+          if (dayBuckets[b].count > maxBucket) maxBucket = dayBuckets[b].count;
+          break;
+        }
+      }
+    });
+
+    // Last 14 days score trend
+    var scoreBuckets = [];
+    for (var j = 13; j >= 0; j--) {
+      var sStart = now - j * dayMs;
+      var sKey = self._dayKey(sStart);
+      var bucket = { key: sKey, label: self._fmtDate(sStart), sum: 0, count: 0, date: sStart };
+      scoreBuckets.push(bucket);
+    }
+    sessions.forEach(function(s) {
+      if (typeof s.score !== 'number') return;
+      var k = self._dayKey(s.t);
+      for (var sb = 0; sb < scoreBuckets.length; sb++) {
+        if (scoreBuckets[sb].key === k) {
+          scoreBuckets[sb].sum += s.score;
+          scoreBuckets[sb].count++;
+          break;
+        }
+      }
+    });
+    var scorePoints = scoreBuckets.map(function(b) {
+      return { x: b.date, y: b.count ? Math.round(b.sum / b.count) : null, label: b.label };
+    });
+
+    // Recent activity (newest first, max 50)
+    var recent = sessions.slice().sort(function(a, b) { return b.t - a.t; }).slice(0, 50);
+
+    // Goals
+    var dailyXpGoal = this.settings.dailyGoal || 100;
+    var todayXp = 0;
+    var todayKey = this._dayKey(now);
+    sessions.forEach(function(s) {
+      if (self._dayKey(s.t) === todayKey) todayXp += (s.score || 0);
+    });
+    var weekSessions = dayBuckets.reduce(function(sum, b) { return sum + b.count; }, 0);
+
+    var empty = sessions.length === 0;
+
+    // ---------- Render ----------
+    var html = '';
+    html += '<div class="analytics-header">';
+    html += '  <div><h2 class="screen-title">Analytics</h2>';
+    html += '    <p class="analytics-sub">Track sessions, streaks, and progress over time</p></div>';
+    if (empty) {
+      html += '  <button class="btn btn-secondary btn-sm" id="btnSeedSample">Load sample 14 days</button>';
+    } else {
+      html += '  <button class="btn btn-secondary btn-sm" id="btnExportCSV">Export CSV</button>';
+    }
+    html += '</div>';
+
+    if (empty) {
+      html += '<div class="analytics-empty">';
+      html += '  <div class="analytics-empty-icon">~</div>';
+      html += '  <h3>No activity yet</h3>';
+      html += '  <p>Play a game or load 14 days of sample data to see your analytics.</p>';
+      html += '</div>';
+      container.innerHTML = html;
+      var seedBtn = document.getElementById('btnSeedSample');
+      if (seedBtn) seedBtn.addEventListener('click', function() {
+        var added = self.seedSampleSessions(14);
+        self.renderAnalytics();
+      });
+      return;
+    }
+
+    // ----- Stat cards -----
+    html += '<div class="analytics-stats">';
+    html += this._statCardHtml('sessions', 'Total Sessions', totalSessions, 'Across all activities', sessionsTrend);
+    html += this._statCardHtml('score', 'Average Score', avgScore, 'Across completed quizzes', scoreTrend, true);
+    html += this._statCardHtml('words', 'Words Learned', wordsLearned, 'Lifetime', null);
+    html += this._statCardHtml('time', 'Time Spent', this._fmtDuration(totalDur), 'Total practice time', null, false, true);
+    html += '</div>';
+
+    // ----- Streak row -----
+    html += '<div class="analytics-section">';
+    html += '  <div class="streak-row">';
+    html += '    <div class="streak-card">';
+    html += '      <div class="streak-flame">F</div>';
+    html += '      <div>';
+    html += '        <div class="streak-number">' + this.user.streak + '</div>';
+    html += '        <div class="streak-label">Current Streak</div>';
+    html += '        <div class="streak-best">Best: ' + this.user.bestStreak + ' days</div>';
+    html += '      </div>';
+    html += '    </div>';
+    html += '    <div class="streak-dots-wrap">';
+    html += '      <div class="streak-dots">';
+    var todayIdx = dayBuckets.length - 1;
+    for (var di = 0; di < dayBuckets.length; di++) {
+      var b = dayBuckets[di];
+      var dotClass = b.count > 0 ? (di === todayIdx ? 'dot-today' : 'dot-on') : 'dot-off';
+      html += '<div class="streak-dot ' + dotClass + '" title="' + b.label + ' — ' + b.count + ' session' + (b.count === 1 ? '' : 's') + '"></div>';
+    }
+    html += '      </div>';
+    html += '      <div class="streak-legend">';
+    html += '        <span><span class="dot" style="background:' + success + '"></span> Completed</span>';
+    html += '        <span><span class="dot" style="background:' + accent + '"></span> Today</span>';
+    html += '        <span><span class="dot" style="background:' + border + '"></span> Missed</span>';
+    html += '      </div>';
+    html += '    </div>';
+    html += '  </div>';
+    html += '</div>';
+
+    // ----- Charts -----
+    html += '<div class="analytics-section">';
+    html += '  <div class="section-title"><span>~</span> Weekly Activity</div>';
+    html += '  <div class="analytics-charts">';
+    html += '    <div class="chart-card">';
+    html += '      <div class="chart-header"><div class="chart-title">Sessions per Day</div><div class="chart-subtitle">Last 7 days</div></div>';
+    html +=      this._barChartSvg(dayBuckets.map(function(b){ return { label: b.label, value: b.count }; }), maxBucket, accent, muted);
+    html += '    </div>';
+    html += '    <div class="chart-card">';
+    html += '      <div class="chart-header"><div class="chart-title">Score Trend</div><div class="chart-subtitle">Last 14 days</div></div>';
+    html +=      this._lineChartSvg(scorePoints, 0, 100, accent, surface, border, muted);
+    html += '    </div>';
+    html += '  </div>';
+    html += '</div>';
+
+    // ----- Recent activity -----
+    html += '<div class="analytics-section">';
+    html += '  <div class="section-title"><span>!</span> Recent Activity</div>';
+    html += '  <div class="activity-filters" id="analyticsFilters">';
+    var filters = ['all', 'vocab', 'quiz', 'typing', 'reading', 'speaking', 'grammar', 'dictionary'];
+    filters.forEach(function(f, i) {
+      html += '<button class="filter-btn' + (i === 0 ? ' active' : '') + '" data-filter="' + f + '">' + f.charAt(0).toUpperCase() + f.slice(1) + '</button>';
+    });
+    html += '  </div>';
+    html += '  <div class="activity-list" id="analyticsActivityList"></div>';
+    html += '</div>';
+
+    // ----- Goals -----
+    html += '<div class="analytics-section">';
+    html += '  <div class="section-title"><span>+</span> Goals</div>';
+    html += '  <div class="goals-grid">';
+    html += this._goalCardHtml('daily', 'Daily XP', todayXp, dailyXpGoal, 'cyan', accent);
+    html += this._goalCardHtml('weekly', 'Weekly Sessions', weekSessions, 20, 'violet', accent);
+    html += this._goalCardHtml('target', 'Mastery Target', wordsLearned, 200, 'green', success);
+    html += '  </div>';
+    html += '</div>';
+
+    container.innerHTML = html;
+
+    // ----- Wire up filter buttons -----
+    var currentFilter = 'all';
+    function renderList() {
+      var filtered = currentFilter === 'all' ? recent : recent.filter(function(s) { return s.type === currentFilter; });
+      var listEl = document.getElementById('analyticsActivityList');
+      if (!listEl) return;
+      if (!filtered.length) {
+        listEl.innerHTML = '<div class="activity-empty">No activity matches this filter.</div>';
+        return;
+      }
+      listEl.innerHTML = filtered.map(function(s) {
+        var d = new Date(s.t);
+        var dateStr = self._fmtDate(s.t) + ' · ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+        var icon = self._activityIcon(s.type);
+        var scoreStr = typeof s.score === 'number' ? s.score + '%' : '—';
+        var durStr = self._fmtDuration(s.dur);
+        return '<div class="activity-item">' +
+          '<div class="activity-icon" data-type="' + (s.type || 'vocab') + '">' + icon + '</div>' +
+          '<div class="activity-body">' +
+            '<div class="activity-name">' + (s.type || 'vocab').charAt(0).toUpperCase() + (s.type || 'vocab').slice(1) + (s.levelUp ? ' · Level ' + s.levelUp + ' reached' : '') + '</div>' +
+            '<div class="activity-meta">' + (s.words && s.words.length ? s.words.slice(0, 3).join(', ') + ' · ' : '') + durStr + '</div>' +
+          '</div>' +
+          '<div class="activity-score">' + scoreStr + '</div>' +
+          '<div class="activity-time">' + dateStr + '</div>' +
+        '</div>';
+      }).join('');
+    }
+    renderList();
+    var filterBtns = document.querySelectorAll('#analyticsFilters .filter-btn');
+    filterBtns.forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        filterBtns.forEach(function(b) { b.classList.remove('active'); });
+        btn.classList.add('active');
+        currentFilter = btn.dataset.filter;
+        renderList();
+      });
+    });
+
+    // CSV button
+    var csvBtn = document.getElementById('btnExportCSV');
+    if (csvBtn) csvBtn.addEventListener('click', function() { self.exportSessionsCSV(); });
+  },
+
+  _getCssVar: function(name) {
+    if (typeof getComputedStyle === 'undefined') return null;
+    var root = document.documentElement;
+    var v = getComputedStyle(root).getPropertyValue(name).trim();
+    return v || null;
+  },
+
+  _trendPct: function(current, previous) {
+    if (!previous) return current > 0 ? 100 : 0;
+    return Math.round(((current - previous) / previous) * 100);
+  },
+
+  _statCardHtml: function(kind, label, value, sub, trend, isPercent, isTime) {
+    var trendHtml = '';
+    if (typeof trend === 'number') {
+      var cls = trend >= 0 ? 'trend-up' : 'trend-down';
+      var arrow = trend >= 0 ? '&#9650;' : '&#9660;';
+      var labelTxt = trend >= 0 ? 'vs last month' : 'vs last month';
+      trendHtml = '<div class="stat-trend ' + cls + '">' + arrow + ' ' + Math.abs(trend) + '% ' + labelTxt + '</div>';
+    }
+    return '<div class="stat-card analytics-stat ' + kind + '">' +
+      '<div class="stat-icon">' + (kind === 'sessions' ? 'S' : kind === 'score' ? '%' : kind === 'words' ? 'W' : 'T') + '</div>' +
+      '<div class="stat-label">' + label + '</div>' +
+      '<div class="stat-value">' + value + (isPercent ? '<span class="stat-unit">%</span>' : isTime ? '' : '') + '</div>' +
+      '<div class="stat-sub">' + sub + '</div>' +
+      trendHtml +
+    '</div>';
+  },
+
+  _goalCardHtml: function(kind, label, current, target, colorName, color) {
+    var pct = target > 0 ? Math.min(100, Math.round((current / target) * 100)) : 0;
+    return '<div class="goal-card">' +
+      '<div class="goal-head"><span class="goal-badge ' + colorName + '">' + label + '</span><span class="goal-pct">' + pct + '%</span></div>' +
+      '<div class="goal-progress-outer"><div class="goal-progress-inner ' + colorName + '" style="width:' + pct + '%"></div></div>' +
+      '<div class="goal-meta"><span class="current">' + current + '</span><span>Goal: ' + target + '</span></div>' +
+    '</div>';
+  },
+
+  _activityIcon: function(type) {
+    var map = { vocab: 'V', quiz: 'Q', typing: 'T', reading: 'R', speaking: 'S', grammar: 'G', dictionary: 'D' };
+    return map[type] || '·';
+  },
+
+  _fmtDuration: function(sec) {
+    sec = Math.round(sec || 0);
+    if (sec < 60) return sec + 's';
+    if (sec < 3600) return Math.round(sec / 60) + 'm';
+    var h = Math.floor(sec / 3600);
+    var m = Math.round((sec % 3600) / 60);
+    return h + 'h' + (m ? ' ' + m + 'm' : '');
+  },
+
+  _barChartSvg: function(data, max, color, mutedColor) {
+    var w = 360, h = 140;
+    var padding = { l: 24, r: 8, t: 10, b: 22 };
+    var cw = w - padding.l - padding.r;
+    var ch = h - padding.t - padding.b;
+    var barW = cw / data.length * 0.6;
+    var gap = cw / data.length * 0.4;
+    var yMax = Math.max(max, 1);
+    var svg = '<svg class="bar-svg" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" style="width:100%;height:160px">';
+    // Grid lines
+    for (var g = 0; g <= 4; g++) {
+      var gy = padding.t + (ch / 4) * g;
+      svg += '<line x1="' + padding.l + '" y1="' + gy + '" x2="' + (w - padding.r) + '" y2="' + gy + '" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>';
+    }
+    data.forEach(function(d, i) {
+      var x = padding.l + (cw / data.length) * i + gap / 2;
+      var barH = (d.value / yMax) * ch;
+      var y = padding.t + ch - barH;
+      svg += '<rect x="' + x + '" y="' + y + '" width="' + barW + '" height="' + barH + '" rx="3" fill="' + color + '" opacity="0.85">';
+      svg += '<title>' + d.label + ' — ' + d.value + ' session' + (d.value === 1 ? '' : 's') + '</title>';
+      svg += '</rect>';
+      svg += '<text x="' + (x + barW / 2) + '" y="' + (h - 6) + '" text-anchor="middle" fill="' + mutedColor + '" font-size="10">' + d.label + '</text>';
+    });
+    svg += '</svg>';
+    return svg;
+  },
+
+  _lineChartSvg: function(points, yMin, yMax, color, fillColor, borderColor, mutedColor) {
+    var w = 360, h = 160;
+    var padding = { l: 24, r: 8, t: 12, b: 22 };
+    var cw = w - padding.l - padding.r;
+    var ch = h - padding.t - padding.b;
+    var n = points.length;
+    var stepX = n > 1 ? cw / (n - 1) : 0;
+    var svg = '<div class="line-chart-wrap"><svg class="line-svg" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" style="width:100%;height:160px">';
+    // Grid
+    for (var g = 0; g <= 4; g++) {
+      var gy = padding.t + (ch / 4) * g;
+      var gv = yMax - (yMax - yMin) * (g / 4);
+      svg += '<line x1="' + padding.l + '" y1="' + gy + '" x2="' + (w - padding.r) + '" y2="' + gy + '" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>';
+      svg += '<text x="' + (padding.l - 4) + '" y="' + (gy + 3) + '" text-anchor="end" fill="' + mutedColor + '" font-size="9">' + Math.round(gv) + '</text>';
+    }
+    // Build polyline (skip null)
+    var validPts = points.map(function(p, i) {
+      if (p.y === null) return null;
+      return { x: padding.l + i * stepX, y: padding.t + ch - ((p.y - yMin) / (yMax - yMin)) * ch, label: p.label, val: p.y };
+    });
+    // Build path with null gaps as multiple segments
+    var segments = [];
+    var current = [];
+    validPts.forEach(function(p) {
+      if (p === null) {
+        if (current.length) segments.push(current);
+        current = [];
+      } else {
+        current.push(p);
+      }
+    });
+    if (current.length) segments.push(current);
+
+    // Filled area under first valid segment only (gradient vibe)
+    if (segments.length) {
+      var seg = segments[0];
+      if (seg.length > 1) {
+        var area = 'M ' + seg[0].x + ' ' + (padding.t + ch) + ' L ';
+        seg.forEach(function(p) { area += p.x + ' ' + p.y + ' L '; });
+        area += seg[seg.length - 1].x + ' ' + (padding.t + ch) + ' Z';
+        svg += '<path d="' + area + '" fill="' + color + '" opacity="0.12"/>';
+      }
+      // Lines for each segment
+      segments.forEach(function(seg) {
+        if (seg.length < 2) return;
+        var d = 'M ' + seg[0].x + ' ' + seg[0].y;
+        for (var pi = 1; pi < seg.length; pi++) d += ' L ' + seg[pi].x + ' ' + seg[pi].y;
+        svg += '<path d="' + d + '" stroke="' + color + '" stroke-width="2" fill="none" stroke-linejoin="round" stroke-linecap="round"/>';
+      });
+    }
+    // Dots + hover targets (skip null gaps)
+    validPts.forEach(function(p, i) {
+      if (!p) return;
+      svg += '<circle cx="' + p.x + '" cy="' + p.y + '" r="3" fill="' + color + '" data-i="' + i + '"/>';
+    });
+    svg += '</svg></div>';
+    return svg;
   },
 
   /* ---------- Export / Import / Reset ---------- */
